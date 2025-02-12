@@ -1,0 +1,58 @@
+<script>
+    kiwi.plugin('avatars', (kiwi) => {
+        kiwi.on('irc.join', (event, net) => {
+            kiwi.Vue.nextTick(() => {
+                updateAvatar(net, event.nick);
+            });
+        });
+    
+        kiwi.on('irc.wholist', (event, net) => {
+            let nicks = event.users.map((user) => user.nick);
+            kiwi.Vue.nextTick(() => {
+                nicks.forEach((nick) => {
+                    updateAvatar(net, nick, false);
+                });
+            });
+        });
+    
+        kiwi.on('irc.account', (event, net) => {
+            kiwi.Vue.nextTick(() => {
+                updateAvatar(net, event.nick, true);
+            });
+        });
+    
+        function updateAvatar(net, nick, _force) {
+            let force = !!_force;
+            let user = kiwi.state.getUser(net.id, nick);
+            if (!user) {
+                return;
+            }
+        
+            if (!force && user.avatar && user.avatar.small) {
+                return;
+            }
+        
+            if (user.account) {
+                fetch(`https://example.com/accounts/api/get_avatar/?account=${user.account}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.avatar_url) {
+                            user.avatar.small = data.avatar_url;
+                            user.avatar.large = data.avatar_url;
+                        } else {
+                            // Use KiwiIRC's initials avatar
+                            user.avatar.small = `kiwi-avatar-initials:${user.account}`;
+                            user.avatar.large = `kiwi-avatar-initials:${user.account}`;
+                        }
+                    })
+                    .catch(() => {
+                        user.avatar.small = `kiwi-avatar-initials:${user.account}`;
+                        user.avatar.large = `kiwi-avatar-initials:${user.account}`;
+                    });
+            } else {
+                user.avatar.small = `kiwi-avatar-initials:${nick}`;
+                user.avatar.large = `kiwi-avatar-initials:${nick}`;
+            }
+        }        
+    });    
+</script>

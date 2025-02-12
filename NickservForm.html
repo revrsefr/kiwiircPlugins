@@ -1,0 +1,118 @@
+<script>
+    kiwi.plugin('nickserv_auth', function(kiwi, log) {
+        log.info('✅ NickServ Auto-Auth Plugin Loaded');
+    
+        let authPopup = null;
+        let countdownInterval = null;
+        let countdown = 27; // Matches Atheme Enforcetime 20
+    
+        kiwi.on('irc.notice', function(event, network) {
+            let message = event.message;
+            let nick = network.currentUser.nick;
+    
+            //  Detect NickServ warning message
+            if (message.includes("This nickname is registered")) {
+                showAuthPopup(network, nick);
+            }
+    
+            //  Close popup if successfully authenticated
+            if (message.includes("You are now identified")) {
+                closeAuthPopup();
+            }
+    
+            //  Show error if password is incorrect & continue countdown
+            if (message.toLowerCase().includes("invalid password") || message.toLowerCase().includes("incorrect password")) {
+                updateErrorMessage(`Incorrect password. Try again.`);
+            }
+    
+            //  Auto-close if user fails to identify in time
+            if (message.includes("You failed to identify in time for the nickname")) {
+                closeAuthPopup();
+            }
+        });
+    
+        function showAuthPopup(network, nick) {
+            if (authPopup) {
+                closeAuthPopup();
+            }
+    
+            countdown = 27;
+            authPopup = document.createElement("div");
+            authPopup.className = "nsform-container"; // 
+            authPopup.style = "position: fixed; top: 30%; left: 50%; transform: translate(-50%, -50%); background: #333; padding: 20px; border-radius: 8px; z-index: 9999; text-align: center;";
+            authPopup.innerHTML = `
+                <div id="nickserv-form" title="NickServ" class="kiwi-dark-simple-nick u-form u-input u-input-text u-input-text--focus u-input-text--reveal-value">
+                    <p id="validate" class="kiwi-dark-simple-error kiwi-ns-error" style="color: #c2baba; font-size: 15px;">
+                        Ce pseudonyme est réservé. Vous devez vous identifier pour le conserver. <span id="countdown">Il vous reste ${countdown} secondes pour vous identifier.</span>
+                    </p>
+                    <div class="u-input-text kiwi-ns-input">
+                        <div class="u-input-text-inputs">
+                            <input id="sasl_password" placeholder="Tapez votre mot de passe" type="password" required="required" class="u-input" style="width: 100%; padding: 10px; margin-top: 10px; border: 1px solid #666; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <div class="u-input-text-underline">
+                        <div class="u-input-text-underline-active"></div>
+                    </div>
+                    <button id="sasl_submit" class="u-button u-button-primary u-submit kiwi-welcome-simple-start kiwi-ns-button" style="margin-top: 10px; padding: 8px 15px; background: #00bcd4; border: none; color: white; cursor: pointer;">Se connecter</button>
+                </div>
+            `;
+    
+            document.body.appendChild(authPopup);
+    
+            startCountdown();
+    
+            document.getElementById('sasl_submit').addEventListener('click', function() {
+                let password = document.getElementById('sasl_password').value.trim();
+                if (password) {
+                    log.info(`🔐 Attempting NickServ IDENTIFY for ${nick}`);
+                    network.ircClient.say('NickServ', `IDENTIFY ${password}`);
+                }
+            });
+        }
+    
+        function startCountdown() {
+            let countdownDisplay = document.getElementById('countdown');
+            if (!countdownDisplay) return;
+    
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+    
+            countdownInterval = setInterval(() => {
+                countdown -= 1;
+                updateCountdownText(countdown);
+    
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    closeAuthPopup();
+                }
+            }, 1000);
+        }
+    
+        function updateCountdownText(time) {
+            let countdownDisplay = document.getElementById('countdown');
+            if (countdownDisplay) {
+                countdownDisplay.textContent = `(${time}s)`;
+            }
+        }
+    
+        function updateErrorMessage(msg) {
+            let errorBox = document.getElementById('validate');
+            if (errorBox) {
+                errorBox.style.color = "grey";
+                errorBox.innerHTML = `${msg} <span id="countdown">(${countdown}s)</span>`;
+            }
+        }
+    
+        function closeAuthPopup() {
+            if (authPopup) {
+                authPopup.remove();
+                authPopup = null;
+                log.info("✅ Auth popup closed.");
+            }
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+        }
+    });                
+</script>

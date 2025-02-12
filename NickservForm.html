@@ -47,13 +47,13 @@
                     </p>
                     <div class="u-input-text kiwi-ns-input">
                         <div class="u-input-text-inputs">
-                            <input id="sasl_password" placeholder="Tapez votre mot de passe" type="password" required="required" class="u-input" style="width: 100%; padding: 10px; margin-top: 10px; border: 1px solid #666; border-radius: 4px;">
+                            <input id="ns_passwordform" placeholder="Tapez votre mot de passe" type="password" required="required" class="u-input" style="width: 100%; padding: 10px; margin-top: 10px; border: 1px solid #666; border-radius: 4px;">
                         </div>
                     </div>
                     <div class="u-input-text-underline">
                         <div class="u-input-text-underline-active"></div>
                     </div>
-                    <button id="sasl_submit" class="u-button u-button-primary u-submit kiwi-welcome-simple-start kiwi-ns-button" style="margin-top: 10px; padding: 8px 15px; background: #00bcd4; border: none; color: white; cursor: pointer;">Se connecter</button>
+                    <button id="nspasswordform_submit" class="u-button u-button-primary u-submit kiwi-welcome-simple-start kiwi-ns-button" style="margin-top: 10px; padding: 8px 15px; background: #00bcd4; border: none; color: white; cursor: pointer;">Se connecter</button>
                 </div>
             `;
     
@@ -61,8 +61,8 @@
     
             startCountdown();
     
-            document.getElementById('sasl_submit').addEventListener('click', function() {
-                let password = document.getElementById('sasl_password').value.trim();
+            document.getElementById('nspasswordform_submit').addEventListener('click', function() {
+                let password = document.getElementById('ns_passwordform').value.trim();
                 if (password) {
                     log.info(`🔐 Attempting NickServ IDENTIFY for ${nick}`);
                     network.ircClient.say('NickServ', `IDENTIFY ${password}`);

@@ -1,0 +1,798 @@
+<template id="pluginUploadSelector">
+    <div>
+        <a @click="pickFile()">
+            <i class="fa fa-camera" :class="[uploading ? 'fa-spin' : '']"></i>
+            <span></span>
+            <input @change="uploadFile($event)" id="FileHostUploader" type="file"
+                accept="image/*,video/*,audio/*,.pdf,.zip,.rar,.7z,.tar,.gz,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" 
+                style="display: none; width: 0; height: 0;">
+        </a>
+    </div>
+</template>
+
+<template id="filehost-login-modal">
+    <div class="filehost-modal">
+        <div class="filehost-close-button" @click="close">×</div>
+        <div class="filehost-title">Login Required</div>
+        <div class="filehost-status">
+            You must be logged in with NickServ to use file hosting.
+        </div>
+        <div class="filehost-form">
+            <div class="filehost-input-group">
+                <label for="filehost-username">Username:</label>
+                <input type="text" id="filehost-username" v-model="username" placeholder="Your IRC nickname" @keyup.enter="loginToNickServ">
+            </div>
+            <div class="filehost-input-group">
+                <label for="filehost-password">Password:</label>
+                <input type="password" id="filehost-password" v-model="password" placeholder="Your NickServ password" @keyup.enter="loginToNickServ">
+            </div>
+            <div class="filehost-status error" v-if="errorMessage">{{ errorMessage }}</div>
+            <div class="filehost-status success" v-if="successMessage">{{ successMessage }}</div>
+        </div>
+        <div class="filehost-buttons">
+            <button class="filehost-button login" @click="loginToNickServ" :disabled="isLoggingIn || !username || !password">
+                {{ isLoggingIn ? 'Logging in...' : 'Login' }}
+            </button>
+            <button class="filehost-button cancel" @click="close">Cancel</button>
+        </div>
+    </div>
+</template>
+
+<style>
+    .filehost-modal {
+        position: fixed;
+        top: 30%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: var(--brand-default-bg, #333);
+        padding: 20px;
+        border-radius: 8px;
+        z-index: 9999;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        min-width: 320px;
+    }
+
+    .filehost-title {
+        color: var(--brand-default-fg, #1fc709);
+        margin-bottom: 15px;
+        font-size: 18px;
+    }
+
+    .filehost-status {
+        color: var(--brand-darktone, #c2baba);
+        font-size: 15px;
+        margin-bottom: 15px;
+    }
+
+    .filehost-status.error {
+        color: var(--brand-error, #f44336);
+    }
+
+    .filehost-status.success {
+        color: var(--brand-primary, #4caf50);
+    }
+
+    .filehost-form {
+        text-align: left;
+        margin-bottom: 15px;
+    }
+
+    .filehost-input-group {
+        margin-bottom: 10px;
+    }
+
+    .filehost-input-group label {
+        display: block;
+        color: var(--brand-default-fg, #eee);
+        margin-bottom: 3px;
+        font-size: 14px;
+    }
+
+    .filehost-input-group input {
+        width: 100%;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid var(--brand-input-border, #555);
+        background: var(--brand-input-bg, #222);
+        color: var(--brand-input-fg, #fff);
+        box-sizing: border-box;
+        font-size: 14px;
+    }
+
+    .filehost-input-group input:focus {
+        outline: none;
+        border-color: var(--brand-primary, #00bcd4);
+        box-shadow: 0 0 0 2px rgba(var(--brand-primary-rgb, 0, 188, 212), 0.25);
+    }
+
+    .filehost-buttons {
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .filehost-button {
+        padding: 8px 15px;
+        background: var(--brand-primary, #00bcd4);
+        border: none;
+        color: white;
+        cursor: pointer;
+        border-radius: 4px;
+        flex-grow: 1;
+        margin: 0 5px;
+        font-size: 14px;
+    }
+
+    .filehost-button:first-child {
+        margin-left: 0;
+    }
+
+    .filehost-button:last-child {
+        margin-right: 0;
+    }
+
+    .filehost-button.cancel {
+        background: var(--brand-midtone, #666);
+    }
+
+    .filehost-button.login {
+        background: var(--brand-primary, #4caf50);
+    }
+
+    .filehost-button:disabled {
+        background: var(--comp-border, #777);
+        cursor: not-allowed;
+    }
+
+    /* Add overlay background for modal */
+    .filehost-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 9998;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    code {
+        background: var(--brand-input-bg, #222);
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-family: monospace;
+        color: var(--brand-notice, #ffcc00);
+        border: 1px solid var(--comp-border, #444);
+    }
+
+    .filehost-close-button {
+        position: absolute;
+        top: 5px;
+        right: 10px;
+        cursor: pointer;
+        font-size: 24px;
+        color: var(--brand-darktone, #999);
+        line-height: 20px;
+        font-weight: bold;
+        width: 25px;
+        height: 25px;
+    }
+
+    .filehost-close-button:hover {
+        color: var(--brand-default-fg, #fff);
+    }
+</style>
+
+<script>
+kiwi.plugin('filehost_upload', function(kiwi, log) {
+    log.info('✅ FileHost Upload Plugin Loaded');
+
+    // Plugin configuration
+    const uploadLinkRegex = /https?:\/\/[^\s]+token=[^\s]+/i;
+    const MAX_SIZE = 16 * 1024 * 1024; // 16MB default file size limit
+    
+    // Login required notice regex - expanded to catch all variations
+    const loginRequiredRegex = /(You must be logged in to use file hosting|Use \/LOGIN nick password)/i;
+    let lastLoginMessageId = null; // Track the ID of login messages to remove them
+    
+    // Plugin state variables
+    let isUploading = false;
+    let waitingForToken = false;
+    let selectedFile = null;
+    let loginModalInstance = null;
+    
+    // Create Vue component for the login modal
+    const LoginModal = kiwi.Vue.extend({
+        template: '#filehost-login-modal',
+        data: function() {
+            return {
+                username: '',
+                password: '',
+                isLoggingIn: false,
+                errorMessage: '',
+                successMessage: '',
+                checkCounter: 0,
+                maxChecks: 10,
+                tokenCheckTimer: null // Define the tokenCheckTimer variable here
+            };
+        },
+        mounted: function() {
+            // Register ESC key to close modal
+            document.addEventListener('keydown', this.handleKeyDown);
+            
+            // Add click outside to close
+            setTimeout(() => {
+                document.addEventListener('click', this.handleOutsideClick);
+            }, 100);
+            
+            // Try to prepopulate username with current nick
+            try {
+                const network = kiwi.state.getActiveNetwork();
+                if (network && network.nick) {
+                    this.username = network.nick;
+                    // Focus password field since username is filled
+                    setTimeout(() => {
+                        document.getElementById('filehost-password').focus();
+                    }, 100);
+                } else {
+                    // Focus username field if we couldn't get nick
+                    setTimeout(() => {
+                        document.getElementById('filehost-username').focus();
+                    }, 100);
+                }
+            } catch(e) {
+                log.error('Error getting current nickname:', e);
+                // Focus username field as fallback
+                setTimeout(() => {
+                    document.getElementById('filehost-username').focus();
+                }, 100);
+            }
+        },
+        beforeDestroy: function() {
+            // Clean up event listeners
+            document.removeEventListener('keydown', this.handleKeyDown);
+            document.removeEventListener('click', this.handleOutsideClick);
+            this.clearTokenCheckTimer();
+        },
+        methods: {
+            handleKeyDown: function(e) {
+                // Close on ESC key
+                if (e.key === 'Escape') {
+                    this.close();
+                }
+            },
+            handleOutsideClick: function(e) {
+                // Close when clicking outside the modal
+                if (this.$el && !this.$el.contains(e.target)) {
+                    this.close();
+                }
+            },
+            loginToNickServ: function() {
+                if (!this.username || !this.password || this.isLoggingIn) {
+                    return;
+                }
+                
+                this.errorMessage = '';
+                this.successMessage = '';
+                this.isLoggingIn = true;
+                this.checkCounter = 0;
+                
+                try {
+                    const network = kiwi.state.getActiveNetwork();
+                    if (!network) {
+                        throw new Error('No active network connection');
+                    }
+                    
+                    // Check if we need to change nickname first
+                    if (network.nick !== this.username) {
+                        // Set nick to match username
+                        log.info(`Changing nickname from ${network.nick} to ${this.username}`);
+                        network.ircClient.changeNick(this.username);
+                    }
+                    
+                    // Track the message for later removal
+                    const buffer = kiwi.state.getActiveBuffer();
+                    if (buffer) {
+                        const msg = kiwi.state.addMessage(buffer, {
+                            time: Date.now(),
+                            nick: '*',
+                            message: 'Logging in to NickServ...',
+                            type: 'notice'
+                        });
+                        if (msg) {
+                            lastLoginMessageId = msg.id;
+                        }
+                    }
+                    
+                    // Send identify command to NickServ
+                    network.ircClient.say('NickServ', `IDENTIFY ${this.username} ${this.password}`);
+                    
+                    this.successMessage = 'Login request sent! Checking status...';
+                    log.info('NickServ login request sent, checking authentication status');
+                    
+                    // Start verification process
+                    this.checkLoginStatus();
+                    
+                } catch (error) {
+                    this.errorMessage = `Failed to send login command: ${error.message}`;
+                    this.isLoggingIn = false;
+                    log.error('NickServ login error:', error);
+                    this.password = ''; // Clear password for security
+                }
+            },
+            clearTokenCheckTimer: function() {
+                if (this.tokenCheckTimer) {
+                    clearTimeout(this.tokenCheckTimer);
+                    this.tokenCheckTimer = null;
+                }
+            },
+            checkLoginStatus: function() {
+                this.checkCounter++;
+                
+                try {
+                    // Check if we're already logged in via IRC mode flags
+                    const network = kiwi.state.getActiveNetwork();
+                    if (network && network.ircClient && network.ircClient.user.modes.has('r')) {
+                        // Instead of making an AJAX request, send the FILEHOST command and rely on the notice handler
+                        log.info('User is authenticated with NickServ, sending FILEHOST command');
+                        
+                        // Send the FILEHOST command directly
+                        network.ircClient.raw('FILEHOST');
+                        
+                        this.successMessage = 'Login successful! Requesting upload token...';
+                        this.isLoggingIn = false;
+                        this.clearTokenCheckTimer();
+                        
+                        // Update UI and close modal after a brief delay
+                        setTimeout(() => {
+                            this.close();
+                            
+                            // Attempt upload again if we were waiting
+                            if (waitingForToken && selectedFile) {
+                                // The message.new event handler will handle the token response
+                                log.info('Waiting for FILEHOST response');
+                            }
+                        }, 1500);
+                        return;
+                    }
+                } catch (e) {
+                    // Log error but don't stop execution
+                    log.error('Error checking for registered mode:', e);
+                }
+                
+                // Not authenticated yet - keep checking for mode flag
+                if (this.checkCounter >= this.maxChecks) {
+                    // Give up after max attempts
+                    this.errorMessage = 'Login verification timed out. Please try again.';
+                    this.isLoggingIn = false;
+                    this.clearTokenCheckTimer();
+                } else {
+                    // Try again after a delay - keep checking for 'r' flag
+                    this.tokenCheckTimer = setTimeout(() => {
+                        this.checkLoginStatus();
+                    }, 1000);
+                }
+            },
+            close: function() {
+                // Clean up and close modal
+                this.clearTokenCheckTimer();
+                this.$emit('close');
+            }
+        }
+    });
+    
+    // Function to show login required modal
+    function showLoginModal() {
+        // Don't show multiple modals
+        if (loginModalInstance) {
+            return;
+        }
+        
+        // Create overlay for modal - make sure any existing overlay is removed first
+        let overlay = document.querySelector('.filehost-overlay');
+        if (overlay) {
+            document.body.removeChild(overlay);
+        }
+        
+        overlay = document.createElement('div');
+        overlay.className = 'filehost-overlay';
+        document.body.appendChild(overlay);
+        
+        // Create and mount the modal
+        loginModalInstance = new LoginModal();
+        loginModalInstance.$mount();
+        overlay.appendChild(loginModalInstance.$el);
+        
+        // Listen for the close event to clean up properly
+        loginModalInstance.$on('close', function() {
+            if (overlay && overlay.parentNode) {
+                overlay.parentNode.removeChild(overlay);
+            }
+            if (loginModalInstance) {
+                loginModalInstance.$destroy();
+                loginModalInstance = null;
+            }
+        });
+        
+        log.info('Displayed login required modal');
+        
+        // Auto close after 30 seconds
+        setTimeout(() => {
+            if (loginModalInstance) {
+                loginModalInstance.close();
+            }
+        }, 30000);
+    }
+    
+    // Create Vue component for the upload button
+    const uploadSelector = {
+        template: '#pluginUploadSelector',
+        data: function() {
+            return {
+                uploading: false
+            };
+        },
+        methods: {
+            pickFile: function() {
+                if (isUploading) {
+                    return;
+                }
+                
+                // Check if user is already logged in before showing file picker
+                const network = kiwi.state.getActiveNetwork();
+                if (network && network.ircClient && network.ircClient.user.modes.has('r')) {
+                    // User is already logged in, proceed with file selection
+                    document.querySelector('#FileHostUploader').click();
+                } else {
+                    // Show login modal immediately instead of freezing
+                    showLoginModal();
+                }
+            },
+            uploadFile: function(event) {
+                if (!event.target.files || !event.target.files[0]) {
+                    return;
+                }
+
+                const file = event.target.files[0];
+                
+                // Check file size
+                if (file.size > MAX_SIZE) {
+                    this.handleError(`File size (${(file.size / 1024 / 1024).toFixed(1)}MB) exceeds limit (${MAX_SIZE / 1024 / 1024}MB)`);
+                    event.target.value = null;
+                    return;
+                }
+
+                selectedFile = file;
+                this.startUpload();
+                
+                // Clear the input for next time
+                event.target.value = null;
+            },
+            startUpload: function() {
+                if (isUploading) return;
+                
+                isUploading = true;
+                waitingForToken = true;
+                this.uploading = true;
+                
+                // Notify user that upload is starting
+                const buffer = kiwi.state.getActiveBuffer();
+                if (buffer) {
+                    kiwi.state.addMessage(buffer, {
+                        time: Date.now(),
+                        nick: '*',
+                        message: 'Requesting upload token...',
+                        type: 'notice'
+                    });
+                }
+                
+                // Send the FILEHOST command to request a token
+                const network = kiwi.state.getActiveNetwork();
+                if (!network) {
+                    this.handleError('No active network connection');
+                    return;
+                }
+                
+                try {
+                    network.ircClient.raw('FILEHOST');
+                    log.info('FILEHOST command sent to server');
+                } catch (error) {
+                    this.handleError(`Failed to send FILEHOST command: ${error.message}`);
+                    return;
+                }
+                
+                // Set a timeout for token response
+                setTimeout(() => {
+                    if (waitingForToken) {
+                        waitingForToken = false;
+                        this.handleError('Timed out waiting for token response');
+                    }
+                }, 10000);
+            },
+            handleError: function(message) {
+                log.error(message);
+                isUploading = false;
+                waitingForToken = false;
+                this.uploading = false;
+                
+                // Show error message to user
+                const buffer = kiwi.state.getActiveBuffer();
+                if (buffer) {
+                    kiwi.state.addMessage(buffer, {
+                        time: Date.now(),
+                        nick: '*',
+                        message: 'Upload error: ' + message,
+                        type: 'error'
+                    });
+                }
+            }
+        }
+    };
+
+    // Register the Vue component
+    kiwi.addUi('input', uploadSelector);
+    
+    // Function to handle actual file upload with token
+    async function uploadFileWithToken(token, file, uploadUrl) {
+        try {
+            // Create form data for upload
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            // Log upload attempt
+            log.info(`Uploading file to ${uploadUrl} with token`);
+            
+            // Notify user that upload is in progress
+            const buffer = kiwi.state.getActiveBuffer();
+            kiwi.state.addMessage(buffer, {
+                time: Date.now(),
+                nick: '*',
+                message: 'Uploading file...',
+                type: 'notice'
+            });
+
+            // Send the request with explicit CORS handling
+            const response = await fetch(uploadUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
+                // Use omit mode for credentials - this works best with most CORS setups
+                credentials: 'omit',
+                // No-cors mode often doesn't work for this type of request
+                mode: 'cors',
+                body: formData
+            });
+            
+            // Handle response status codes specifically
+            if (!response.ok) {
+                let errorMsg = '';
+                
+                // Special handling for common status codes
+                if (response.status === 502) {
+                    errorMsg = 'The filehost server is currently unavailable (502 Bad Gateway). Contact your administrator.';
+                    log.error('FileHost 502 error - backend server might be down or not responding');
+                } else if (response.status === 413) {
+                    errorMsg = `File is too large (413 Payload Too Large). Maximum size: ${MAX_SIZE / 1024 / 1024}MB.`;
+                } else if (response.status === 401 || response.status === 403) {
+                    errorMsg = `Your token is invalid or expired (${response.status}). Try again.`;
+                } else {
+                    errorMsg = `Server returned ${response.status}: ${response.statusText}`;
+                    
+                    try {
+                        const errorData = await response.json();
+                        if (errorData.error || errorData.message) {
+                            errorMsg = errorData.error || errorData.message;
+                        }
+                    } catch (e) {
+                        // If we can't parse JSON, try to get text
+                        try {
+                            const errorText = await response.text();
+                            if (errorText && errorText.length < 100) { // Only use if it's reasonably short
+                                errorMsg = errorText;
+                            }
+                        } catch (textError) {
+                            // If we can't get text either, stick with the status code message
+                        }
+                    }
+                }
+                
+                throw new Error(errorMsg);
+            }
+            
+            // Parse response data
+            let result;
+            try {
+                result = await response.json();
+            } catch (jsonError) {
+                throw new Error(`Invalid response format: ${jsonError.message}`);
+            }
+            
+            // Find the URL in the response using multiple possible paths
+            const uploadedUrl = result.url || result.data?.url || result.fileUrl || result.link;
+            
+            if (uploadedUrl) {
+                // Insert URL into channel
+                insertText(uploadedUrl);
+                
+                // Show success message
+                kiwi.state.addMessage(buffer, {
+                    time: Date.now(),
+                    nick: '*',
+                    message: 'File uploaded successfully!',
+                    type: 'notice'
+                });
+            } else {
+                throw new Error('No URL found in server response');
+            }
+        } catch (error) {
+            // Improved error handling with specific messages for different types of errors
+            if (error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
+                log.error('CORS or Network Error: Cannot access the FileHost server');
+                const buffer = kiwi.state.getActiveBuffer();
+                kiwi.state.addMessage(buffer, {
+                    time: Date.now(),
+                    nick: '*',
+                    message: 'Error: Cannot access upload server. This may be a CORS issue or network problem.',
+                    type: 'error'
+                });
+            } else if (error.message.includes('502')) {
+                log.error(`Upload Error: 502 Bad Gateway - The FileHost backend server is not responding`);
+                const buffer = kiwi.state.getActiveBuffer();
+                kiwi.state.addMessage(buffer, {
+                    time: Date.now(),
+                    nick: '*',
+                    message: `Error: The upload server is unavailable. Contact your administrator.`,
+                    type: 'error'
+                });
+            } else {
+                log.error(`Upload Error: ${error.message}`);
+                const buffer = kiwi.state.getActiveBuffer();
+                kiwi.state.addMessage(buffer, {
+                    time: Date.now(),
+                    nick: '*',
+                    message: `Upload failed: ${error.message}`,
+                    type: 'error'
+                });
+            }
+        } finally {
+            // Reset upload state
+            isUploading = false;
+            waitingForToken = false;
+            selectedFile = null;
+            
+            // Reset component state - fixed access to Vue component
+            try {
+                // Multiple ways to access the component instance depending on KiwiIRC version
+                if (kiwi.Vue && kiwi.Vue.prototype && kiwi.Vue.prototype.$kiwi) {
+                    const component = kiwi.Vue.prototype.$kiwi.Vue.component('filehost_upload');
+                    if (component && component.instances && component.instances[0]) {
+                        component.instances[0].uploading = false;
+                    }
+                } else if (uploadSelector && uploadSelector.instances && uploadSelector.instances.length) {
+                    // Direct access to component instances if available
+                    uploadSelector.instances.forEach(instance => {
+                        instance.uploading = false;
+                    });
+                }
+                // If all else fails, we'll rely on the watchdog in the uploadSelector component
+            } catch (e) {
+                log.error('Error resetting component state:', e);
+            }
+        }
+    }
+    
+    // Function to insert text into channel (instead of input field)
+    function insertText(text) {
+        try {
+            // Get the active buffer
+            const buffer = kiwi.state.getActiveBuffer();
+            if (buffer) {
+                // Send URL to the channel with FILEHOST prefix
+                buffer.say("FILEHOST: " + text);
+                log.info('URL sent to channel');
+                return true;
+            } else {
+                throw new Error('No active buffer found');
+            }
+        } catch (error) {
+            log.error(`Failed to send URL to channel: ${error.message}`);
+            
+            // Fallback: Show a notification with the URL
+            const buffer = kiwi.state.getActiveBuffer();
+            if (buffer) {
+                kiwi.state.addMessage(buffer, {
+                    time: Date.now(),
+                    nick: '*',
+                    message: 'File uploaded: ' + text,
+                    type: 'notice'
+                });
+            }
+        }
+        return false;
+    }
+    
+    // Listen for token messages from the server
+    kiwi.state.$on('message.new', function(event) {
+        // Check for login required notice
+        const msg = event.message;
+        if (msg.type === 'notice' && msg.message && loginRequiredRegex.test(msg.message)) {
+            log.info('Detected login required notice');
+            
+            // If we're waiting for a token, this means the upload was attempted but failed
+            if (waitingForToken) {
+                waitingForToken = false;
+                isUploading = false;
+                
+                // Reset component state
+                try {
+                    if (uploadSelector && uploadSelector.instances && uploadSelector.instances.length) {
+                        uploadSelector.instances.forEach(instance => {
+                            instance.uploading = false;
+                        });
+                    }
+                } catch (e) {
+                    log.error('Error resetting component state:', e);
+                }
+            }
+            
+            // Show the login modal
+            showLoginModal();
+            return;
+        }
+        
+        // Check for FILEHOST notification messages
+        if (msg.type === 'notice' && msg.message && 
+            (msg.message.includes('FILEHOST:') || msg.message.includes('Upload files using'))) {
+            
+            log.info('Detected FILEHOST notice:', msg.message);
+            
+            // Extract upload URL from the message - specifically looking for URLs with token parameter
+            const urlMatches = msg.message.match(/(https?:\/\/\S+(?:token=\S+))/i);
+            if (urlMatches && urlMatches[1] && waitingForToken && selectedFile) {
+                const tokenUrl = urlMatches[1];
+                log.info('Found upload URL with token:', tokenUrl);
+                
+                try {
+                    // Parse the URL to extract token and base URL
+                    const urlObj = new URL(tokenUrl);
+                    const token = urlObj.searchParams.get('token');
+                    const uploadUrl = `${urlObj.origin}${urlObj.pathname}`;
+                    
+                    if (token && selectedFile) {
+                        // We have a token and a file - proceed with upload
+                        log.info('Starting upload with token');
+                        uploadFileWithToken(token, selectedFile, uploadUrl);
+                    }
+                } catch (error) {
+                    log.error(`Error processing token URL: ${error.message}`);
+                    isUploading = false;
+                    waitingForToken = false;
+                    
+                    // Reset component state
+                    try {
+                        if (uploadSelector && uploadSelector.instances && uploadSelector.instances.length) {
+                            uploadSelector.instances.forEach(instance => {
+                                instance.uploading = false;
+                            });
+                        }
+                    } catch (e) {
+                        log.error('Error resetting component state:', e);
+                    }
+                    
+                    // Show error to user
+                    const buffer = kiwi.state.getActiveBuffer();
+                    kiwi.state.addMessage(buffer, {
+                        time: Date.now(),
+                        nick: '*',
+                        message: `Error processing upload token: ${error.message}`,
+                        type: 'error'
+                    });
+                }
+            }
+        }
+    });
+});
+</script>
